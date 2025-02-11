@@ -43,7 +43,7 @@ submit_job() {
         --priority high \
         --yes \
         --brief \
-        -icmd="python /app/MetaXcan/software/SPrediXcan.py --model_db_path ${cell_db_id} --gwas_file ${gwas_file_id} --snp_column SNPID --beta_column BETA --effect_allele_column ALLELE1 --non_effect_allele_column ALLELE0 --se_column SE --zscore_column ZSCORE --covariance ${cell_covariance_id} --keep_non_rsid --pvalue_column PVALUE --output_file ${gwas_name}.preixcan_${cell_name}_cells.csv"`")
+        -icmd="python /app/MetaXcan/software/SPrediXcan.py --model_db_path ${cell_db_id} --gwas_file ${gwas_file_id} --snp_column SNPID --beta_column BETA --effect_allele_column ALLELE1 --non_effect_allele_column ALLELE0 --se_column SE --zscore_column ZSCORE --covariance ${cell_covariance_id} --keep_non_rsid --pvalue_column PVALUE --output_file ${gwas_name}.preixcan_${cell_name}_cells.csv")
     
     echo "Submitted job ${job_id} at $(date)"
     echo "${job_id}" > current_job_id.txt
