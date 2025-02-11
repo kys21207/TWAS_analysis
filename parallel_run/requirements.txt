@@ -1,4 +1,9 @@
-numpy
-scipy
-pandas
-h5py
+numpy==1.16.6
+scipy==1.2.3
+pandas==0.25.3
+sqlalchemy==1.3.24
+patsy==0.5.2
+statsmodels==0.10.2
+h5py==2.10.0
+bgen_reader==3.0.3
+cyvcf2==0.30.15
