@@ -5,12 +5,18 @@ echo "Starting job submission process at $(date)"
 
 # Directories
 PROJECT="project-Gv45qjQ09Vk2p6X7q5xJ42PV"
-GWAS_DIR="/mnt/project/genuity_data/time2event_results"
+GWAS_DIR="/mnt/project/genuity_data/tmp_gwas_data"
 CELL_DIR="/mnt/project/publically_available_supporting_files/scPrediXcan/immune_model"
 OUTPUT_DIR="${PROJECT}:/analysis_KJ/scPrediXcan/"
 IMAGE_FILE="project-GB8P46j0BkYky47b1ZP4bqKp:/docker_images/predixcan_v20250204.tar.gz"
 
-MAX_JOBS=1  # Maximum number of simultaneous jobs
+MAX_JOBS=10  # Maximum number of simultaneous jobs
+
+# Array to store running job IDs
+declare -a running_jobs=()
+total_submitted=0
+total_completed=0
+total_failed=0
 
 submit_job() {
     local cell=$1
@@ -23,7 +29,7 @@ submit_job() {
     local cell_db_id="$(basename ${cell})"
     local gwas_file_id="$(basename ${file})"
     local cell_covariance_id="$(basename ${cell} .db)_covariances.txt.gz"
-    local gwas_name="$(basename ${file} .regenie.gz)"
+    local gwas_name="$(basename ${file} .input.txt.gz)"
     local cell_name="$(basename ${cell} .db)"
 
     echo "Submitting job with:"
@@ -43,73 +49,105 @@ submit_job() {
         --priority high \
         --yes \
         --brief \
-        -icmd="python /app/MetaXcan/software/SPrediXcan.py --model_db_path ${cell_db_id} --gwas_file ${gwas_file_id} --snp_column SNPID --beta_column BETA --effect_allele_column ALLELE1 --non_effect_allele_column ALLELE0 --se_column SE --zscore_column ZSCORE --covariance ${cell_covariance_id} --keep_non_rsid --pvalue_column PVALUE --output_file ${gwas_name}.preixcan_${cell_name}_cells.csv")
+        -icmd="python /app/MetaXcan/software/SPrediXcan.py --model_db_path ${cell_db_id} --gwas_file ${gwas_file_id} --snp_column rsid --beta_column BETA --effect_allele_column ALLELE1 --non_effect_allele_column ALLELE0 --zscore_column Z --covariance ${cell_covariance_id} --keep_non_rsid --pvalue_column P --output_file ${gwas_name}.preixcan_${cell_name}_cells.csv")
     
-    echo "Submitted job ${job_id} at $(date)"
-    echo "${job_id}" > current_job_id.txt
+    if [ -n "$job_id" ]; then
+        echo "Submitted job ${job_id} at $(date)"
+        running_jobs+=("$job_id")
+        ((total_submitted++))
+        echo "Total jobs submitted: $total_submitted"
+        return 0
+    else
+        echo "Failed to submit job at $(date)"
+        return 1
+    fi
 }
 
-wait_for_current_job() {
-    if [ ! -f current_job_id.txt ]; then
-        return 0
-    fi
-
-    local job_id=$(cat current_job_id.txt)
-    echo "Waiting for job ${job_id} to complete..."
+check_jobs() {
+    local new_running_jobs=()
+    local completed=0
+    local failed=0
     
-    while true; do
-        local state=$(dx describe --json "$job_id" | jq -r .state)
-        echo "Job ${job_id} state: ${state} at $(date)"
-        
-        if [ "$state" == "done" ]; then
-            echo "Job ${job_id} completed successfully"
-            rm current_job_id.txt
-            return 0
-        elif [ "$state" == "failed" ] || [ "$state" == "terminated" ]; then
-            echo "Job ${job_id} failed or was terminated"
-            rm current_job_id.txt
-            return 1
+    for job_id in "${running_jobs[@]}"; do
+        if [ -z "$job_id" ]; then
+            continue
         fi
         
-        sleep 60  # Check every minute
+        local state=$(dx describe --json "$job_id" | jq -r .state)
+        
+        case "$state" in
+            "done")
+                echo "Job ${job_id} completed successfully at $(date)"
+                ((completed++))
+                ((total_completed++))
+                ;;
+            "failed"|"terminated")
+                echo "Job ${job_id} ${state} at $(date)"
+                ((failed++))
+                ((total_failed++))
+                ;;
+            *)
+                new_running_jobs+=("$job_id")
+                ;;
+        esac
+    done
+    
+    running_jobs=("${new_running_jobs[@]}")
+    echo "Status: Running: ${#running_jobs[@]}, Completed: $total_completed, Failed: $total_failed, Total Submitted: $total_submitted"
+}
+
+wait_for_job_slot() {
+    while [ ${#running_jobs[@]} -ge $MAX_JOBS ]; do
+        echo "Currently running ${#running_jobs[@]}/$MAX_JOBS jobs, waiting for slot..."
+        sleep 30
+        check_jobs
     done
 }
 
-counter=0
+# Count total expected jobs
+total_cells=$(ls "${CELL_DIR}"/*.db 2>/dev/null | wc -l)
+total_gwas=$(ls "${GWAS_DIR}"/*.input.txt.gz 2>/dev/null | wc -l)
+total_expected=$((total_cells * total_gwas))
+echo "Expected total jobs: $total_expected"
 
 echo "Scanning for cell files in ${CELL_DIR}"
 for cell in "${CELL_DIR}"/*.db; do
-    # Skip if no files are found
     [ -e "$cell" ] || continue
-    # Increment counter
-    counter=$((counter + 1))
-    # Skip the first file
-    if [ $counter -le 1 ]; then
-        continue
-    fi
-
+    
     echo "Processing cell file: $cell"
-    for file in "${GWAS_DIR}"/*.regenie*.gz; do
-        # Skip if no files are found
+    for file in "${GWAS_DIR}"/*.input.txt.gz; do
         [ -e "$file" ] || continue
         
         echo "Processing GWAS file: $file at $(date)"
         
-        # Submit the job
-        submit_job "$cell" "$file"
+        # Wait for available job slot
+        wait_for_job_slot
         
-        # Wait for the current job to complete
-        if ! wait_for_current_job; then
-            echo "Previous job failed, continuing with next job..."
-            continue
+        # Submit the job
+        if submit_job "$cell" "$file"; then
+            # Check jobs status every 3 submissions
+            if [ $((total_submitted % 3)) -eq 0 ]; then
+                check_jobs
+            fi
+        else
+            echo "Failed to submit job for $file with $cell"
         fi
+        
+        # Small delay between submissions
+        sleep 2
     done
 done
 
-echo "Job submission complete at $(date)"
-
-# Debug: List all cell files
-echo "Available cell files:"
-for cell in "${CELL_DIR}"/*.db; do
-    echo "$cell"
+# Wait for all remaining jobs to complete
+echo "Waiting for remaining jobs to complete..."
+while [ ${#running_jobs[@]} -gt 0 ]; do
+    sleep 30
+    check_jobs
 done
+
+echo "Job submission complete at $(date)"
+echo "Final Status:"
+echo "Total Jobs Submitted: $total_submitted"
+echo "Total Jobs Completed: $total_completed"
+echo "Total Jobs Failed: $total_failed"
+echo "Expected Jobs: $total_expected"
