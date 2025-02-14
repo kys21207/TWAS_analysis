@@ -36,3 +36,25 @@ ldsc.py \
 --ref-ld-chr baselineLD_v2.2/baselineLD.@ \
 --w-ld-chr weights/weights.hm3_noMHC.@ \
 --out /opt/notebooks/dx_uc_v3
+
+
+./munge_sumstats.py \
+--out /opt/notebooks/psoriasis_harm \
+--p p_value \
+--a1 effect_allele \
+--a2 other_allele  \
+--N 426000 \
+--snp rsid \
+--sumstats /mnt/project/publically_available_supporting_files/gwas_public_results/autoimmune_step_2_additive_psoriasis_harm_input.h.tsv.gz  
+
+cp -r /mnt/project/publically_available_supporting_files/GRCh38/ /opt/notebooks/
+tar -xvzf /opt/notebooks/GRCh38/baselineLD_v2.2.tgz
+tar -xvzf /opt/notebooks/GRCh38/weights.tgz 
+
+./ldsc.py \
+--h2 /opt/notebooks/psoriasis_harm.sumstats.gz \
+--ref-ld-chr /opt/notebooks/baselineLD_v2.2/baselineLD.@ \
+--w-ld-chr /opt/notebooks/weights/weights.hm3_noMHC.@ \
+--samp-prev 0.014 \
+--pop-prev 0.02 \
+--out /opt/notebooks/psoriasis_harm
