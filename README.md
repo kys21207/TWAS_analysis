@@ -1,5 +1,7 @@
 # SPrediXcan_run
 
+## Comments
+I found that the results are overestimated (too good across all genes). I highly recommend using it with --gwas_N and --gwas_h2 to correct for the inflation of polygenicity. However, there is no immune cell type dataset with phi. They only have a bulk tissue dataset. 
 ## download immune cell
 From https://zenodo.org/records/14346661 using the below step
 All dataset were built using hg38.
