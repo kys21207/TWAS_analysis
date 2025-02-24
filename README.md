@@ -6,6 +6,8 @@ I found that the results are overestimated (too good across all genes). I highly
 From https://zenodo.org/records/14346661 using the below step
 All dataset were built using hg38.
 ### Install the package inborutis and load into library
+library(devtools)
+install_github("inbo/inborutils")
 library(inborutils)
 
 doi <- "10.5281/zenodo.3923633" <br>
